@@ -1,0 +1,56 @@
+*{
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 93%;
+}
+
+.title{
+    font-size: 100%;
+    text-align: center;
+}
+
+.provider{
+    width: 100%;
+}
+
+.detail{
+    width: 100%;
+    text-align: center;
+    
+}
+
+.detail{
+    border-collapse: collapse;
+}
+
+.detail td, th {
+    border: 1px solid #dddddd;
+    padding: 8px;
+}
+
+.aprobacion{
+    width: 100%;
+    text-align: center;
+}
+
+.aprobacion td, th {
+    border: 1px solid #dddddd;
+    padding: 8px;
+}
+
+.aprobacion{
+    border-collapse: collapse;
+}
+
+.observa{
+    width: 100%;
+    text-align: center;
+}
+
+.observa td, th {
+    border: 1px solid #dddddd;
+    padding: 8px;
+}
+
+.observa{
+    border-collapse: collapse;
+}

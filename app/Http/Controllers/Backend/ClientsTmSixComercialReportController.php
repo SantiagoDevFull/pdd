@@ -1,0 +1,515 @@
+<?php
+
+namespace App\Http\Controllers\Backend;
+
+
+use App\Http\Controllers\Controller;
+use App\Client;
+use App\Company;
+use App\Article;
+use App\ClientRoute;
+use Illuminate\Http\Request;
+use App\SaleDetail;
+use App\Sale;
+use App\BusinessUnit;
+use Carbon\CarbonImmutable;
+use Carbon\Carbon;
+use strtotime;
+use Illuminate\Support\Facades\DB;
+use Maatwebsite\Excel\Facades\Excel;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xls;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+
+use stdClass;
+
+
+class ClientsTmSixComercialReportController extends Controller
+{
+    public function index() {
+	
+		$current_date = date(DATE_ATOM, mktime(0, 0, 0));
+		$client_routes = ClientRoute::select('id','short_name')->whereIn('type', [1])->get();
+		return view('backend.clients_tm_six_comercial_report')->with(compact('current_date' ,'client_routes'));
+	}
+
+	public function validateForm() {
+		$messages = [
+			'initial_date.required'	=> 'Debe seleccionar una Fecha inicial.',
+			
+		];
+
+		$rules = [
+			'initial_date'	=> 'required',
+			
+		];
+
+		request()->validate($rules, $messages);
+		return request()->all();
+	}
+
+	public function getClients() {
+		$business_unit_id = request('business_unit_id');
+		$q = request('q');
+
+		$clients = Client::select('id', 'business_name as text')
+			->when($business_unit_id, function($query, $business_unit_id) {
+				return $query->where('business_unit_id', $business_unit_id);
+			})
+			->where('business_name', 'like', '%'.$q.'%')
+			->withTrashed()
+			->get();
+
+		return $clients;
+	}
+
+	public function list() {
+
+		$export = request('export');
+		$route_id = request('model.route_id');
+
+	    $initial_date = CarbonImmutable::createFromDate(request('model.initial_date'))->startOfDay()->format('Y-m-d');		
+        $mes_date = CarbonImmutable::createFromDate(request('model.initial_date'))->startOfDay()->format('Y-m-01');       
+		$day = date('j', strtotime($initial_date));
+		$mesActual= date('n', strtotime($initial_date));
+		$anioActual= date ('Y', strtotime($initial_date));
+		$number =cal_days_in_month(CAL_GREGORIAN, $mesActual, $anioActual);
+
+		
+		
+		/*	$elements = Sale::leftjoin('sale_details', 'sales.id', '=', 'sale_details.sale_id')
+		    ->leftjoin('clients', 'sales.client_id', '=', 'clients.id')    		
+			->leftjoin('client_routes', 'clients.route_id', '=', 'client_routes.id')
+            ->leftjoin('client_addresses', function($join) {
+			    $join->on('clients.id', '=', 'client_addresses.client_id')
+				->where('client_addresses.address_type_id', 1);})
+			->leftjoin('ubigeos', 'client_addresses.ubigeo_id', '=', 'ubigeos.id')
+		//	->where('sales.sale_date', '>=',  $mes_date)
+		//	->where('sales.sale_date', '<=',  $initial_date)
+			->whereIn('sales.warehouse_document_type_id', [13,5,7,4])
+			->whereNotIn('sales.client_id', [1031, 427, 13326, 13775, 14072, 14258,13233])
+			->select('sales.id','clients.id as client_id',
+            'clients.route_id as ruta_id',
+            'client_routes.short_name as ruta',
+            'clients.business_name as name', 
+            'ubigeos.district as district')
+			->when($route_id, function($query, $route_id) {
+				return $query->where('clients.route_id', $route_id);
+			})	
+		    ->groupBy('clients.route_id')
+            ->orderBy('ruta_id')
+			->get();*/
+
+			$elements = Client::leftjoin('client_routes', 'clients.route_id', '=', 'client_routes.id')
+			->leftjoin('business_units', 'clients.business_unit_id', '=', 'business_units.id')
+			->leftjoin('client_sectors', 'clients.sector_id', '=', 'client_sectors.id')
+			->where('clients.created_at','>=',$mes_date)
+			->where('clients.created_at', '<=', $initial_date)
+			->select('clients.id as client_id',
+            'clients.route_id as ruta_id',
+            'client_routes.short_name as ruta',
+            'business_units.name as name',
+			'client_sectors.name as channel_name',
+			'clients.business_name as client_name')
+			->when($route_id, function($query, $route_id) {
+				return $query->where('clients.route_id', $route_id);
+			})	
+		    ->groupBy('clients.id')
+            ->orderBy('ruta_id')
+			->get();
+			$response=[];
+
+			$totals_clientes = 0;
+		    $totals_mes_ant = 0;
+		    $totals_mes_proy = 0;
+			$totals_mes_dos = 0;
+			$totals_mes_tres = 0;
+			$totals_mes_cuatro = 0;
+			$totals_mes_cinco = 0;
+			$totals_mes_seis = 0;
+			$totals_mes_max = 0;
+
+			foreach ($elements as $saledetail) {
+
+				
+				
+				$price_mes = date('Y-m-01', strtotime('-1 month', strtotime($mes_date)));
+            //  $inicioMesPasado = date("Y-m-d", $price_mes);
+                $tiempoMesPasado = strtotime( "last day of previous month",strtotime($mes_date));
+                $fechaMesPasado = date("Y-m-d", $tiempoMesPasado);
+
+                $price_mes2 = date('Y-m-01', strtotime('-2 month', strtotime($mes_date)));
+                $price_mes3 = date('Y-m-01', strtotime('-3 month', strtotime($mes_date)));
+                $price_mes4 = date('Y-m-01', strtotime('-4 month', strtotime($mes_date)));
+                $price_mes5 = date('Y-m-01', strtotime('-5 month', strtotime($mes_date)));
+                $price_mes6 = date('Y-m-01', strtotime('-6 month', strtotime($mes_date)));
+
+                $tiempoMesPasado2 = strtotime( "last day of previous month",strtotime($price_mes));
+                $fechaMesPasado2 = date("Y-m-d", $tiempoMesPasado2);
+                $tiempoMesPasado3 = strtotime( "last day of previous month",strtotime($price_mes2));
+                $fechaMesPasado3 = date("Y-m-d", $tiempoMesPasado3);
+                $tiempoMesPasado4 = strtotime( "last day of previous month",strtotime($price_mes3));
+                $fechaMesPasado4 = date("Y-m-d", $tiempoMesPasado4);
+                $tiempoMesPasado5 = strtotime( "last day of previous month",strtotime($price_mes4));
+                $fechaMesPasado5 = date("Y-m-d", $tiempoMesPasado5);
+                $tiempoMesPasado6 = strtotime( "last day of previous month",strtotime($price_mes5));
+                $fechaMesPasado6 = date("Y-m-d", $tiempoMesPasado6);	
+                
+            
+
+                $monthName  = date("F", strtotime ($fechaMesPasado));
+                $monthName2 = date("F", strtotime ($fechaMesPasado2));
+                $monthName3 = date("F", strtotime ($fechaMesPasado3));
+                $monthName4 = date("F", strtotime ($fechaMesPasado4));
+                $monthName5 = date("F", strtotime ($fechaMesPasado5));
+                $monthName6 = date("F", strtotime ($fechaMesPasado6));              
+
+
+        
+
+                $saledetail->ruta = $saledetail['ruta'];
+                $saledetail->ruta_id = $saledetail['ruta_id'];
+				$saledetail->client_id = $saledetail['client_id'];
+				$saledetail->name = $saledetail ['name'];
+				$saledetail->client_name = $saledetail ['client_name'];
+				$saledetail->channel_name = $saledetail ['channel_name'];
+				$saledetail->codigo = $saledetail['client_id'];
+
+
+				$clientes=SaleDetail::leftjoin('sales', 'sale_details.sale_id', '=', 'sales.id')
+                ->leftjoin('clients', 'sales.client_id', '=', 'clients.id')
+				->where('sales.sale_date','>=',$mes_date)
+				->where('sales.sale_date', '<=', $initial_date)
+				->where('clients.route_id', '=', $saledetail->ruta_id)
+				->whereIn('sales.client_id', '=', $saledetail->client_id )
+				->whereNotIn('sales.warehouse_document_type_id', [2,3,8,9,10,11,14,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
+				->whereNotIn('sales.client_id', [1031, 427, 13326, 13775, 14072, 14258,13233,14258])
+				->select('sale_details.kg')
+                ->sum('sale_details.kg');
+
+				$cliente_last=SaleDetail::leftjoin('sales', 'sale_details.sale_id', '=', 'sales.id')
+                ->leftjoin('clients', 'sales.client_id', '=', 'clients.id')
+				->where('clients.route_id', '=', $saledetail->ruta_id)
+				->where('sales.sale_date','>=',$price_mes)
+				->where('sales.sale_date', '<=', $fechaMesPasado)
+				->whereIn('sales.client_id', '=', $saledetail->client_id )
+				->whereNotIn('sales.warehouse_document_type_id', [2,3,8,9,10,11,14,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
+				->whereNotIn('sales.client_id', [1031, 427, 13326, 13775, 14072, 14258,13233,14258])
+				->select('sale_details.kg')
+                ->sum('sale_details.kg');
+
+				$cliente_dos=SaleDetail::leftjoin('sales', 'sale_details.sale_id', '=', 'sales.id')
+                ->leftjoin('clients', 'sales.client_id', '=', 'clients.id')
+				->where('clients.route_id', '=', $saledetail->ruta_id)
+				->where('sales.sale_date','>=',$price_mes2)
+				->where('sales.sale_date', '<=', $fechaMesPasado2)
+				->whereIn('sales.client_id', '=', $saledetail->client_id )
+				->whereNotIn('sales.warehouse_document_type_id', [2,3,8,9,10,11,14,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
+				->whereNotIn('sales.client_id', [1031, 427, 13326, 13775, 14072, 14258,13233,14258])
+				->select('sale_details.kg')
+                ->sum('sale_details.kg');
+
+				$cliente_tres=SaleDetail::leftjoin('sales', 'sale_details.sale_id', '=', 'sales.id')
+                ->leftjoin('clients', 'sales.client_id', '=', 'clients.id')
+				->where('clients.route_id', '=', $saledetail->ruta_id)
+				->where('sales.sale_date','>=',$price_mes3)
+				->where('sales.sale_date', '<=', $fechaMesPasado3)
+				->whereIn('sales.client_id', '=', $saledetail->client_id )
+				->whereNotIn('sales.warehouse_document_type_id', [2,3,8,9,10,11,14,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
+				->whereNotIn('sales.client_id', [1031, 427, 13326, 13775, 14072, 14258,13233,14258])
+				->select('sale_details.kg')
+                ->sum('sale_details.kg');
+
+				$cliente_cuatro=SaleDetail::leftjoin('sales', 'sale_details.sale_id', '=', 'sales.id')
+                ->leftjoin('clients', 'sales.client_id', '=', 'clients.id')
+				->where('clients.route_id', '=', $saledetail->ruta_id)
+				->where('sales.sale_date','>=',$price_mes4)
+				->where('sales.sale_date', '<=', $fechaMesPasado4)
+				->whereIn('sales.client_id', '=', $saledetail->client_id )
+				->whereNotIn('sales.warehouse_document_type_id', [2,3,8,9,10,11,14,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
+				->whereNotIn('sales.client_id', [1031, 427, 13326, 13775, 14072, 14258,13233,14258])
+				->select('sale_details.kg')
+                ->sum('sale_details.kg');
+
+				$cliente_cinco=SaleDetail::leftjoin('sales', 'sale_details.sale_id', '=', 'sales.id')
+                ->leftjoin('clients', 'sales.client_id', '=', 'clients.id')
+				->where('clients.route_id', '=', $saledetail->ruta_id)
+				->where('sales.sale_date','>=',$price_mes5)
+				->where('sales.sale_date', '<=', $fechaMesPasado5)
+				->whereIn('sales.client_id', '=', $saledetail->client_id )
+				->whereNotIn('sales.warehouse_document_type_id', [2,3,8,9,10,11,14,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
+				->whereNotIn('sales.client_id', [1031, 427, 13326, 13775, 14072, 14258,13233,14258])
+				->select('sale_details.kg')
+                ->sum('sale_details.kg');
+
+				$cliente_seis=SaleDetail::leftjoin('sales', 'sale_details.sale_id', '=', 'sales.id')
+                ->leftjoin('clients', 'sales.client_id', '=', 'clients.id')
+				->where('clients.route_id', '=', $saledetail->ruta_id)
+				->where('sales.sale_date','>=',$price_mes6)
+				->where('sales.sale_date', '<=', $fechaMesPasado6)
+				->whereIn('sales.client_id', '=', $saledetail->client_id )
+				->whereNotIn('sales.warehouse_document_type_id', [2,3,8,9,10,11,14,16,17,18,19,20,21,22,23,24,25,26,27,28,29])
+				->whereNotIn('sales.client_id', [1031, 427, 13326, 13775, 14072, 14258,13233,14258])
+				->select('sale_details.kg')
+                ->sum('sale_details.kg');
+
+                $saledetail->clientes = $clientes;
+                $saledetail->mes_act = $saledetail['clientes'];
+                $saledetail->mes_proy =  ($saledetail ['clientes']/ $day)* $number;
+                $saledetail->mes_ant =$cliente_last;
+                $saledetail->mes_dos =$cliente_dos;
+                $saledetail->mes_tres =$cliente_tres;
+                $saledetail->mes_cuatro =$cliente_cuatro;
+                $saledetail->mes_cinco =$cliente_cinco;
+                $saledetail->mes_seis =$cliente_seis;
+
+
+                $saledetail->mes_max = max($saledetail->mes_ant, $saledetail->mes_dos,  $saledetail->mes_tres, $saledetail->mes_cuatro, 
+                $saledetail->mes_cinco, $saledetail->mes_seis);
+
+                if ( $saledetail->mes_ant != 0)
+	            $saledetail->diff =   $saledetail->mes_proy -$saledetail->mes_ant ;
+	            else
+	            {
+                    $saledetail->diff = $saledetail->mes_proy;
+	            }
+
+	            if ( $saledetail->mes_proy != 0)
+	            $saledetail->porc_diff =($saledetail->mes_ant/ $saledetail->mes_proy);
+	            else
+	            {
+                $saledetail->porc_diff=0;
+	            } 
+
+
+
+			$totals_clientes += $saledetail['clientes'];
+			$totals_mes_ant += $saledetail['mes_ant'];
+			$totals_mes_dos += $saledetail['mes_dos'];
+			$totals_mes_tres += $saledetail['mes_tres'];
+			$totals_mes_cuatro += $saledetail['mes_cuatro'];
+			$totals_mes_cinco += $saledetail['mes_cinco'];
+			$totals_mes_seis += $saledetail['mes_seis'];
+			$totals_mes_proy += $saledetail['mes_proy'];
+			$totals_mes_max += $saledetail['mes_max'];
+				
+				
+			$response[] = $saledetail;
+
+			}
+
+
+		$totals = new stdClass();
+		$totals->name= 'TOTAL';
+		$totals->channel_name = '';
+		$totals->client_name = '';
+		$totals->ruta= '';
+		$totals->mes_ant = $totals_mes_ant;
+		$totals->clientes= $totals_clientes;
+		$totals->mes_ant= $totals_mes_ant;
+        $totals->mes_dos= $totals_mes_dos;
+        $totals->mes_tres=  $totals_mes_tres;
+        $totals->mes_cuatro=  $totals_mes_cuatro;
+        $totals->mes_cinco=  $totals_mes_cinco;
+        $totals->mes_seis= $totals_mes_seis;
+        $totals->mes_proy =  $totals_mes_proy;
+        $totals->mes_max= $totals_mes_max;
+		$totals->diff = '';
+		$totals->porc_diff = '';
+		
+		$response[] = $totals;
+
+		if ( $export) {
+			$spreadsheet = new Spreadsheet();
+			$sheet = $spreadsheet->getActiveSheet();
+			$sheet->mergeCells('A1:P1');
+			$sheet->setCellValue('A1', 'REPORTE SEMESTRAL DE CLIENTES NUEVOS AL '.$initial_date);
+			$sheet->getStyle('A1')->applyFromArray([
+				'font' => [
+					'bold' => true,
+					'size' => 16,
+				],
+				'alignment' => [
+					'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER
+				]
+			]);
+
+
+			$sheet->setCellValue('A3', '#');
+			$sheet->setCellValue('B3', 'Negocio');
+			$sheet->setCellValue('C3', 'Canal');
+			$sheet->setCellValue('D3', 'Cliente');
+            $sheet->setCellValue('E3', 'Ruta'); 
+            $sheet->setCellValue('F3', $monthName6);
+            $sheet->setCellValue('G3', $monthName5);
+            $sheet->setCellValue('H3', $monthName4);
+            $sheet->setCellValue('I3', $monthName3);
+            $sheet->setCellValue('J3', $monthName2);
+            $sheet->setCellValue('K3', $monthName);
+            $sheet->setCellValue('L3', 'Mes Actual');
+			$sheet->setCellValue('M3', 'Max. Meses');
+			$sheet->setCellValue('N3', 'Proyección Actual');
+            $sheet->setCellValue('O3', 'Dif');
+            $sheet->setCellValue('P3', '%Dif');
+        //  $sheet->setCellValue('L3', 'Día Final Anterior');
+		//	$sheet->setCellValue('M3', 'Día Inicial Anterior');
+
+
+		
+			
+			
+			$sheet->getStyle('A3:P3')->applyFromArray([
+				'font' => [
+					'bold' => true,
+				],
+			]);
+
+			
+
+			$row_number = 4;
+
+			$sheet->getStyle('A3'.':E3')->applyFromArray([
+				'font' => [
+					'color' => array('rgb' => 'FFFFFF'),
+					'name'      =>  'Calibri',
+					'size'      =>  10,
+					
+				],
+				'alignment' => [
+					'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER
+				],
+				'fill' => [
+					'fillType' => Fill::FILL_SOLID,
+					'startColor' => array('rgb' => '0B2861')
+				]
+			]);
+
+            $sheet->getStyle('F3'.':L3')->applyFromArray([
+				'font' => [
+					'color' => array('rgb' => 'FFFFFF'),
+					'name'      =>  'Calibri',
+					'size'      =>  10,
+					
+				],
+				'alignment' => [
+					'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER
+				],
+				'fill' => [
+					'fillType' => Fill::FILL_SOLID,
+					'startColor' => array('rgb' => '0C8CD1')
+				]
+			]);
+
+			$sheet->getStyle('M3'.':N3')->applyFromArray([
+				'font' => [
+					'color' => array('rgb' => 'FFFFFF'),
+					'name'      =>  'Calibri',
+					'size'      =>  10,
+					
+				],
+				'alignment' => [
+					'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER
+				],
+				'fill' => [
+					'fillType' => Fill::FILL_SOLID,
+					'startColor' => array('rgb' => 'ED5D0A')
+				]
+			]);
+			
+			$sheet->getStyle('O3'.':P3' )->applyFromArray([
+				'font' => [
+					'color' => array('rgb' => 'FFFFFF'),
+					'name'      =>  'Calibri',
+					'size'      =>  10,
+				],
+				'alignment' => [
+					'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER
+				],
+				'fill' => [
+					'fillType' => Fill::FILL_SOLID,
+					'startColor' => array('rgb' => '11B464')
+				]
+			]);
+			
+
+			
+
+			foreach ($response as $index => $element) {
+				$index++;
+				
+			
+
+				$sheet->setCellValueExplicit('A'.$row_number, $index, DataType::TYPE_NUMERIC);
+				$sheet->setCellValue('B'.$row_number, $element->name);
+				$sheet->setCellValue('C'.$row_number, $element->channel_name);
+                $sheet->setCellValue('D'.$row_number, $element->client_name);
+                $sheet->setCellValue('E'.$row_number, $element->ruta);
+                $sheet->setCellValue('F'.$row_number, $element->mes_seis);
+                $sheet->setCellValue('G'.$row_number, $element->mes_cinco);
+                $sheet->setCellValue('H'.$row_number, $element->mes_cuatro);
+                $sheet->setCellValue('I'.$row_number, $element->mes_tres);
+                $sheet->setCellValue('J'.$row_number, $element->mes_dos);
+                $sheet->setCellValue('K'.$row_number, $element->mes_ant);                
+				$sheet->setCellValue('L'.$row_number, $element->clientes);
+				$sheet->setCellValue('M'.$row_number, $element->mes_max);
+				$sheet->setCellValue('N'.$row_number, $element->mes_proy);
+				$sheet->setCellValue('O'.$row_number, $element->diff);
+				$sheet->setCellValue('P'.$row_number, $element->porc_diff);
+
+				
+				$sheet->getStyle('F'.$row_number)->getNumberFormat()->setFormatCode('0.00');
+				$sheet->getStyle('G'.$row_number)->getNumberFormat()->setFormatCode('0.00');
+			    $sheet->getStyle('H'.$row_number)->getNumberFormat()->setFormatCode('0.00');
+			    $sheet->getStyle('I'.$row_number)->getNumberFormat()->setFormatCode('0.00');
+				$sheet->getStyle('J'.$row_number)->getNumberFormat()->setFormatCode('0.00');
+				$sheet->getStyle('K'.$row_number)->getNumberFormat()->setFormatCode('0.00');
+				$sheet->getStyle('L'.$row_number)->getNumberFormat()->setFormatCode('0.00');
+				$sheet->getStyle('M'.$row_number)->getNumberFormat()->setFormatCode('0.00');
+				$sheet->getStyle('N'.$row_number)->getNumberFormat()->setFormatCode('0.00');
+			    $sheet->getStyle('O'.$row_number)->getNumberFormat()->setFormatCode('0.00');
+				$sheet->getStyle('P'.$row_number)->getNumberFormat()->setFormatCode('0.00'.'%');
+		
+				$row_number++;
+
+
+			}
+
+			$sheet->getColumnDimension('A')->setAutoSize(true);
+			$sheet->getColumnDimension('B')->setAutoSize(true);
+			$sheet->getColumnDimension('C')->setAutoSize(true);
+			$sheet->getColumnDimension('D')->setAutoSize(true);
+			$sheet->getColumnDimension('E')->setAutoSize(true);
+			$sheet->getColumnDimension('F')->setAutoSize(true);
+			$sheet->getColumnDimension('G')->setAutoSize(true);
+			$sheet->getColumnDimension('H')->setAutoSize(true);
+			$sheet->getColumnDimension('I')->setAutoSize(true);
+			$sheet->getColumnDimension('J')->setAutoSize(true);
+			$sheet->getColumnDimension('K')->setAutoSize(true);
+            $sheet->getColumnDimension('L')->setAutoSize(true);
+            $sheet->getColumnDimension('M')->setAutoSize(true);
+            $sheet->getColumnDimension('N')->setAutoSize(true);
+            $sheet->getColumnDimension('M')->setAutoSize(true);
+            $sheet->getColumnDimension('O')->setAutoSize(true);
+            $sheet->getColumnDimension('P')->setAutoSize(true);
+			
+
+			$writer = new Xls($spreadsheet);
+			return $writer->save('php://output');
+		} 
+		
+		    else {
+			return response()->json($response);
+		    }
+		
+	}
+}
+	
+
+
+
+
+
+
+
+
